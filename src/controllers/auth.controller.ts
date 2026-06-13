@@ -17,7 +17,7 @@ const generateToken = (userId: string): string => {
 // @access  Public
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, phoneNumber } = req.body;
 
     // Validate input
     if (!email || !password || !name) {
@@ -43,6 +43,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       email: email.toLowerCase(),
       password,
       name,
+      phoneNumber: phoneNumber || '',
     });
 
     // FIXED: Convert ObjectId to string properly

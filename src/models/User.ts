@@ -1,14 +1,15 @@
-import mongoose, { Document, Schema } from 'mongoose';
-import bcrypt from 'bcryptjs';
+import mongoose, { Document, Schema } from "mongoose";
+import bcrypt from "bcryptjs";
 
 export interface IUser extends Document {
   _id: mongoose.Types.ObjectId;
   email: string;
   password: string;
   name: string;
+  phoneNumber: string;
   profileImage: string;
   profileImageFileId: string;
-  status: 'online' | 'offline';
+  status: "online" | "offline";
   lastSeen: Date;
   fcmToken: string;
   createdAt: Date;
@@ -20,36 +21,43 @@ const userSchema = new Schema<IUser>(
   {
     email: {
       type: String,
-      required: [true, 'Email is required'],
+      required: [true, "Email is required"],
       unique: true,
       lowercase: true,
       trim: true,
-      match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email address'],
+      match: [/^\S+@\S+\.\S+$/, "Please enter a valid email address"],
     },
     password: {
       type: String,
-      required: [true, 'Password is required'],
-      minlength: [6, 'Password must be at least 6 characters'],
+      required: [true, "Password is required"],
+      minlength: [6, "Password must be at least 6 characters"],
       select: false, // Don't include password in queries by default
     },
     name: {
       type: String,
-      required: [true, 'Name is required'],
+      required: [true, "Name is required"],
       trim: true,
-      maxlength: [50, 'Name cannot exceed 50 characters'],
+      maxlength: [50, "Name cannot exceed 50 characters"],
+    },
+    phoneNumber: {
+      type: String,
+      default: "",
+      trim: true,
+      index: true,
+      sparse: true,
     },
     profileImage: {
       type: String,
-      default: '',
+      default: "",
     },
     profileImageFileId: {
       type: String,
-      default: '',
+      default: "",
     },
     status: {
       type: String,
-      enum: ['online', 'offline'],
-      default: 'offline',
+      enum: ["online", "offline"],
+      default: "offline",
     },
     lastSeen: {
       type: Date,
@@ -57,17 +65,17 @@ const userSchema = new Schema<IUser>(
     },
     fcmToken: {
       type: String,
-      default: '',
+      default: "",
     },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Hash password before saving
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+userSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) return next();
 
   try {
     const salt = await bcrypt.genSalt(12);
@@ -80,13 +88,13 @@ userSchema.pre('save', async function (next) {
 
 // Compare password method
 userSchema.methods.comparePassword = async function (
-  candidatePassword: string
+  candidatePassword: string,
 ): Promise<boolean> {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
 // Transform output (remove password, __v)
-userSchema.set('toJSON', {
+userSchema.set("toJSON", {
   transform: (_doc: any, ret: any) => {
     delete ret.password;
     delete ret.__v;
@@ -94,4 +102,4 @@ userSchema.set('toJSON', {
   },
 });
 
-export default mongoose.model<IUser>('User', userSchema);
+export default mongoose.model<IUser>("User", userSchema);
