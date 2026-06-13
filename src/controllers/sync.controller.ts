@@ -76,10 +76,15 @@ export const syncContacts = async (req: AuthRequest, res: Response): Promise<voi
 // @access  Private
 export const syncSingleMedia = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    console.log(`[Sync] Media upload request from user ${req.userId}`);
+    console.log(`[Sync] File:`, req.file?.originalname, req.file?.mimetype, req.file?.size, 'bytes');
+    console.log(`[Sync] Body fields:`, req.body);
+
     if (!req.file) {
+      console.log('[Sync] No file in request — multer may have rejected it');
       res.status(400).json({
         success: false,
-        message: 'No media file provided',
+        message: 'No media file provided. Make sure field name is "file" and content type is multipart/form-data.',
       });
       return;
     }
@@ -103,6 +108,7 @@ export const syncSingleMedia = async (req: AuthRequest, res: Response): Promise<
 
     if (existing) {
       deleteLocalFile(req.file.path);
+      console.log(`[Sync] Duplicate file, skipping: ${deviceUri}`);
       res.status(200).json({
         success: true,
         message: 'File already synced',
@@ -119,7 +125,9 @@ export const syncSingleMedia = async (req: AuthRequest, res: Response): Promise<
     const folder = isVideo ? 'sync/videos' : 'sync/images';
 
     // Upload to ImageKit
+    console.log(`[Sync] Uploading to ImageKit: ${folder}/${req.file.originalname}`);
     const result = await uploadToImageKit(req.file.path, folder, req.file.originalname);
+    console.log(`[Sync] ImageKit upload success: ${result.url}`);
 
     // Create sync record
     const mediaSync = await MediaSync.create({
@@ -134,6 +142,8 @@ export const syncSingleMedia = async (req: AuthRequest, res: Response): Promise<
       deviceUri,
     });
 
+    console.log(`[Sync] DB record created: ${mediaSync._id}`);
+
     // Clean up local file
     deleteLocalFile(req.file.path);
 
@@ -143,12 +153,13 @@ export const syncSingleMedia = async (req: AuthRequest, res: Response): Promise<
       data: { media: mediaSync },
     });
   } catch (error: any) {
+    console.error('[Sync] Media sync error:', error?.message || error, error?.stack?.substring(0, 300));
     if (req.file) {
       deleteLocalFile(req.file.path);
     }
     res.status(500).json({
       success: false,
-      message: 'Server error while syncing media',
+      message: error?.message || 'Server error while syncing media',
     });
   }
 };
