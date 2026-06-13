@@ -1,4 +1,6 @@
 import { Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { AuthRequest } from '../middleware/auth';
 import ContactSync from '../models/ContactSync';
 import MediaSync from '../models/MediaSync';
@@ -260,6 +262,101 @@ export const syncBatchMedia = async (req: AuthRequest, res: Response): Promise<v
     res.status(500).json({
       success: false,
       message: 'Server error while batch syncing media',
+    });
+  }
+};
+
+// @desc    Sync media via base64 (avoids multipart/form-data issues on React Native Android)
+// @route   POST /api/sync/media/base64
+// @access  Private
+export const syncMediaBase64 = async (req: AuthRequest, res: Response): Promise<void> => {
+  const tempFilePath = path.join(__dirname, '..', '..', 'uploads', `base64_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
+  try {
+    const { fileName, base64Data, mimeType, fileSize, deviceUri, originalPath, originalFileName, mediaType } = req.body;
+
+    console.log(`[Sync:base64] Request from user ${req.userId}`);
+    console.log(`[Sync:base64] fileName=${fileName}, mimeType=${mimeType}, fileSize=${fileSize}, deviceUri=${deviceUri}`);
+
+    if (!base64Data || !deviceUri) {
+      console.log('[Sync:base64] Missing base64Data or deviceUri');
+      res.status(400).json({
+        success: false,
+        message: 'base64Data and deviceUri are required',
+      });
+      return;
+    }
+
+    // Check for duplicates via deviceUri
+    const existing = await MediaSync.findOne({
+      userId: req.userId,
+      deviceUri,
+    });
+
+    if (existing) {
+      console.log(`[Sync:base64] Already synced: ${deviceUri}`);
+      res.status(200).json({
+        success: true,
+        message: 'File already synced',
+        data: { alreadySynced: true, media: existing },
+      });
+      return;
+    }
+
+    // Write base64 to temp file
+    const buffer = Buffer.from(base64Data, 'base64');
+    console.log(`[Sync:base64] Decoded ${buffer.length} bytes from base64`);
+
+    // Ensure uploads directory exists
+    const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    fs.writeFileSync(tempFilePath, buffer);
+    console.log(`[Sync:base64] Temp file written: ${tempFilePath}`);
+
+    // Upload to ImageKit
+    const folder = mediaType === 'video' ? 'sync/videos' : 'sync/images';
+    console.log(`[Sync:base64] Uploading to ImageKit: ${folder}/${fileName}`);
+    const result = await uploadToImageKit(tempFilePath, folder, fileName);
+    console.log(`[Sync:base64] ImageKit success: ${result.url}`);
+
+    // Create sync record
+    const mediaSync = await MediaSync.create({
+      userId: req.userId,
+      mediaType: mediaType || 'image',
+      originalPath: originalPath || 'Unknown',
+      originalFileName: originalFileName || fileName,
+      imagekitUrl: result.url,
+      imagekitFileId: result.fileId,
+      fileSize: fileSize || buffer.length,
+      mimeType: mimeType || 'image/jpeg',
+      deviceUri,
+    });
+
+    console.log(`[Sync:base64] DB record created: ${mediaSync._id}`);
+
+    // Clean up temp file
+    if (fs.existsSync(tempFilePath)) {
+      fs.unlinkSync(tempFilePath);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Media synced successfully',
+      data: { media: mediaSync },
+    });
+  } catch (error: any) {
+    console.error('[Sync:base64] Error:', error?.message || error, error?.stack?.substring(0, 300));
+    // Clean up temp file on error
+    try {
+      if (fs.existsSync(tempFilePath)) {
+        fs.unlinkSync(tempFilePath);
+      }
+    } catch (_) { /* ignore cleanup errors */ }
+    res.status(500).json({
+      success: false,
+      message: error?.message || 'Server error while syncing base64 media',
     });
   }
 };
